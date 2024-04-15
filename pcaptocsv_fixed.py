@@ -89,8 +89,8 @@ def parse_flows(pcapfile):
     apps = {}
     for captures in re.findall(reg, raw):
         transp_proto, ip1, port1, ip2, port2, app_proto = captures
-        # ip1 = ip_from_string(ip1)
-        # ip2 = ip_from_string(ip2)
+        ip1 = ip_from_string(ip1)
+        ip2 = ip_from_string(ip2)
         port1 = int(port1)
         port2 = int(port2)
         key = (transp_proto.lower(),
@@ -112,8 +112,8 @@ def parse_flows(pcapfile):
             transp_proto = "udp"
         else:
             continue
-        key = (transp_proto, frozenset(((socket.inet_ntoa(ip.src), seg.sport),
-            (socket.inet_ntoa(ip.dst), seg.dport))))
+        key = (transp_proto, frozenset(((ip_from_string(socket.inet_ntoa(ip.src)), seg.sport),
+            (ip_from_string(socket.inet_ntoa(ip.dst)), seg.dport))))
         try:
             assert key in flows
         except AssertionError:
