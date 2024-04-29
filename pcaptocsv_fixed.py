@@ -84,7 +84,7 @@ def parse_flows(pcapfile):
 
     pipe = Popen(["/content/traffic-v2/ndpiReader", "-i", pcapfile, "-v2"], stdout=PIPE)
     raw = pipe.communicate()[0].decode("utf-8")
-    reg = re.compile(r'(UDP|TCP) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}) <-> (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}) \[proto: [\d+\.]*\d+\/(\w+\.?\w+)*\]')
+    reg = re.compile(r'(UDP|TCP) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}) <-> (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}).*\[proto: [\d+\.]*\d+\/(\w+\.?\w+)*\]')
     flows = {}
     apps = {}
     for captures in re.findall(reg, raw):
