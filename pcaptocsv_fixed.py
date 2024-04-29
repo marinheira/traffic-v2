@@ -51,8 +51,10 @@ FEATURES = [
     "server_payload", # сколько полезной нагрузки суммарно передано сервером
     "server_packets", # сколько сегментов суммарно передано сервером
     "server_bulks", # сколько порций данных суммарно передано сервером
-    "is_tcp" # используется ли TCP на транспортном уровне
+    "is_tcp", # используется ли TCP на транспортном уровне
              # (0 означает UDP, другие протоколы не рассматриваются)
+    "IPsrc", "PORTsrc", #IP и порт клиента
+    "IPdst", "PORTdst" # IP и порт сервера
 ]
 
 def ip_from_string(ips):
@@ -129,7 +131,11 @@ def parse_flows(pcapfile):
         flows[key].append(eth)
 
     for key, flow in flows.items():
-        yield apps[key][0], apps[key][1], flow
+        ip_src = ".".join([str(ord(_)) for _ in list(key[1])[0][0]])
+        port_src = list(key[1])[0][1]
+        ip_dst = ".".join([str(ord(_)) for _ in list(key[1])[1][0]])
+        port_dst = list(key[1])[1][1]
+        yield apps[key][0], apps[key][1], ip_src, port_src, ip_dst, port_dst, flow
 
 def forge_flow_stats(flow, strip = 0):
     '''
@@ -267,10 +273,12 @@ def main():
     for pcapfile in args.file:
         if len(args.file) > 1:
             print(pcapfile)
-        for proto, subproto, flow in parse_flows(pcapfile):
+        for proto, subproto, ip_src, port_src, ip_dst, port_dst, flow in parse_flows(pcapfile):
             stats = forge_flow_stats(flow, args.strip)
             if stats:
-                stats.update({"proto": proto, "subproto": subproto})
+                stats.update({"proto": proto, "subproto": subproto, 
+                              "IPsrc": ip_src, "PORTsrc": port_src,
+                              "IPdst": ip_dst, "PORTdst": port_dst})
                 for feature in FEATURES:
                     flows[feature].append(stats[feature])
     data = ps.DataFrame(flows)
