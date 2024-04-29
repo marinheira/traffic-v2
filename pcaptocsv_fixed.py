@@ -117,8 +117,15 @@ def parse_flows(pcapfile):
         try:
             assert key in flows
         except AssertionError:
-            print(repr(socket.inet_ntoa(ip.src)))
-            raise
+            print("Не найдена пара IP в выгрузке ndpiReader, создан ключ во flows")
+            print(transp_proto)
+            print(repr(socket.inet_ntoa(ip.src)), seg.sport)
+            print(repr(socket.inet_ntoa(ip.dst)), seg.dport)
+            # raise
+            flows[key] = []
+            apps[key] = app_proto.split(".")
+            if len(apps[key]) == 1:
+                apps[key].append(None)
         flows[key].append(eth)
 
     for key, flow in flows.items():
