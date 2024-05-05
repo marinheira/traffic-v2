@@ -54,7 +54,8 @@ FEATURES = [
     "is_tcp", # используется ли TCP на транспортном уровне
              # (0 означает UDP, другие протоколы не рассматриваются)
     "IPsrc", "PORTsrc", #IP и порт клиента
-    "IPdst", "PORTdst" # IP и порт сервера
+    "IPdst", "PORTdst", # IP и порт сервера
+    "SSL_name" # SSL-заголовок
 ]
 
 def ip_from_string(ips):
@@ -86,21 +87,35 @@ def parse_flows(pcapfile):
 
     pipe = Popen(["/content/traffic-v2/ndpiReader", "-i", pcapfile, "-v2"], stdout=PIPE)
     raw = pipe.communicate()[0].decode("utf-8")
-    reg = re.compile(r'(UDP|TCP) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}) <-> (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}).*\[proto: [\d+\.]*\d+\/(\w+\.?\w+)*\]')
+    #reg = re.compile(r'(UDP|TCP) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}) <-> (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}).*\[proto: [\d+\.]*\d+\/(\w+\.?\w+)*\]')
+    # строка для парсинга и SSL-заголовка в том числе
+    reg = re.compile(r'(UDP|TCP) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}) <-> (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{1,5}).*\[proto: [\d+\.]*\d+\/(\w+\.?\w+)*\](?:.*\[SSL client: ([^\]]*)\])?')
+    
+    # потоки
     flows = {}
+
+    # протолол\субпротокол\ssl-заголовок потока
     apps = {}
     for captures in re.findall(reg, raw):
-        transp_proto, ip1, port1, ip2, port2, app_proto = captures
+        transp_proto, ip1, port1, ip2, port2, app_proto, i_ssl = captures
         ip1 = ip_from_string(ip1)
         ip2 = ip_from_string(ip2)
         port1 = int(port1)
         port2 = int(port2)
+
+        # ключ потока: транспортный протокол (tcp\udp), затем пара IP:порт источника и пункта назначения
+        # к нему будут прицепляться порции потоков, выгружаемые dpkt-пакетом
         key = (transp_proto.lower(),
             frozenset(((ip1, port1), (ip2, port2))))
-        flows[key] = []
+        flows[key] = [] # порции будут по одной цепляться сюда
+
+        # Если протокол имеет вид proto.subproto, делим его. Если нет, представляем как proto, None
         apps[key] = app_proto.split(".")
         if len(apps[key]) == 1:
             apps[key].append(None)
+        
+        # добавляем SSL-заголовок
+        apps[key].append(i_ssl)
 
     for ts, raw in dpkt.pcap.Reader(open(pcapfile, "rb")):
         eth = dpkt.ethernet.Ethernet(raw)
@@ -114,8 +129,12 @@ def parse_flows(pcapfile):
             transp_proto = "udp"
         else:
             continue
+        
+        # ключ сессии: транспортный протокол (tcp\udp), затем пара IP:порт источника и пункта назначения
         key = (transp_proto, frozenset(((ip_from_string(socket.inet_ntoa(ip.src)), seg.sport),
             (ip_from_string(socket.inet_ntoa(ip.dst)), seg.dport))))
+
+        # если ключа, который найден при чтении по порциям, нет в потоках от ndpi-reader, создаем его во flows
         try:
             assert key in flows
         except AssertionError:
@@ -125,9 +144,14 @@ def parse_flows(pcapfile):
             print(repr(socket.inet_ntoa(ip.dst)), seg.dport)
             # raise
             flows[key] = []
-            apps[key] = app_proto.split(".")
-            if len(apps[key]) == 1:
-                apps[key].append(None)
+        
+        # если ключа, который найден при чтении по порциям, нет в потоках от ndpi-reader, создаем его
+        # и заполняем ничем с указанием, что была ошибка чтения потока
+        try:
+            assert key in apps
+        except AssertionError:
+            apps[key] = ["Error_proto", None, None] # добавляем ошибку вместо транспортного протокола, 
+            # НИЧЕГО на месте субпротокола и ssl-заголовка
         flows[key].append(eth)
 
     for key, flow in flows.items():
@@ -135,7 +159,7 @@ def parse_flows(pcapfile):
         port_src = list(key[1])[0][1]
         ip_dst = ".".join([str(ord(_)) for _ in list(key[1])[1][0]])
         port_dst = list(key[1])[1][1]
-        yield apps[key][0], apps[key][1], ip_src, port_src, ip_dst, port_dst, flow
+        yield apps[key][0], apps[key][1], apps[key][2], ip_src, port_src, ip_dst, port_dst, flow
 
 def forge_flow_stats(flow, strip = 0):
     '''
@@ -273,12 +297,13 @@ def main():
     for pcapfile in args.file:
         if len(args.file) > 1:
             print(pcapfile)
-        for proto, subproto, ip_src, port_src, ip_dst, port_dst, flow in parse_flows(pcapfile):
+        for proto, subproto, i_ssl, ip_src, port_src, ip_dst, port_dst, flow in parse_flows(pcapfile):
             stats = forge_flow_stats(flow, args.strip)
             if stats:
                 stats.update({"proto": proto, "subproto": subproto, 
                               "IPsrc": ip_src, "PORTsrc": port_src,
-                              "IPdst": ip_dst, "PORTdst": port_dst})
+                              "IPdst": ip_dst, "PORTdst": port_dst,
+                              "SSL_name": i_ssl})
                 for feature in FEATURES:
                     flows[feature].append(stats[feature])
     data = ps.DataFrame(flows)
