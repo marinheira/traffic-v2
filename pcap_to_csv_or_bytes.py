@@ -309,7 +309,7 @@ def forge_flow_stats(flow, strip = 0):
 
     return stats
 
-def forge_flow_bytes(flow, strip = 0, strip_bytes = 2048):
+def forge_flow_bytes(flow, strip = 0, strip_bytes = 4096):
     '''
         Достать n битов потока и все биты handshake, если таковой есть.
         Аргументы:
@@ -410,7 +410,7 @@ def main():
     parser.add_argument("-o", "--output", help="output csv file", default="flows.csv")
     parser.add_argument("-reg", "--parse_regimen", help="stats or bytes?", default="stats")
     parser.add_argument("-s", "--strip", help="leave only first N datagramms", metavar = "N", default=0, type=int)
-    parser.add_argument("-bt", "--nbytes", help="leave only first N bytes", metavar = "N", default=2048, type=int)
+    parser.add_argument("-bt", "--nbytes", help="leave only first N bytes", metavar = "N", default=4096, type=int)
     args = parser.parse_args()
 
     if args.parse_regimen == "stats":
